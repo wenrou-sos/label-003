@@ -131,17 +131,10 @@ async function fetchData() {
     pagination.itemCount = warnRes.data?.total || 0
     categoryOptions.value = flattenCategories(catRes.data || catRes || [])
   } catch (e) {
-    dataList.value = [
-      { id: 1, ingredientName: '西红柿', categoryName: '蔬菜类', spec: '500g', unit: 'kg', currentQty: 8, warningThreshold: 20 },
-      { id: 2, ingredientName: '牛肉', categoryName: '肉类', spec: '500g', unit: 'kg', currentQty: 25, warningThreshold: 10 },
-      { id: 3, ingredientName: '鸡蛋', categoryName: '蛋品类', spec: '500g', unit: '个', currentQty: 5, warningThreshold: 50 }
-    ]
-    pagination.itemCount = 3
-    categoryOptions.value = [
-      { label: '蔬菜类', value: 1 },
-      { label: '肉类', value: 2 },
-      { label: '调料类', value: 3 }
-    ]
+    dataList.value = []
+    pagination.itemCount = 0
+    categoryOptions.value = []
+    console.error('fetch warning config error:', e)
   } finally {
     loading.value = false
   }
@@ -173,7 +166,7 @@ async function handleSave(row) {
     await updateWarningConfig(row.id, { warningThreshold: row.warningThreshold })
     message.success('保存成功')
   } catch (e) {
-    message.success('保存成功')
+    console.error('save warning config error:', e)
   }
 }
 
@@ -183,8 +176,7 @@ async function handleDelete(row) {
     message.success('删除成功')
     fetchData()
   } catch (e) {
-    dataList.value = dataList.value.filter(item => item.id !== row.id)
-    message.success('删除成功')
+    console.error('delete warning config error:', e)
   }
 }
 

@@ -374,7 +374,8 @@ async function handleView(row) {
     const res = await getOutboundDetail(row.id)
     detailData.value = res.data?.info || res.data || {}
   } catch (e) {
-    detailData.value = { ...row }
+    detailData.value = {}
+    console.error('fetch outbound detail error:', e)
   } finally {
     detailLoading.value = false
   }
@@ -387,11 +388,9 @@ async function fetchData() {
     dataList.value = res.data?.list || res.data || []
     pagination.itemCount = res.data?.total || 0
   } catch (e) {
-    dataList.value = [
-      { id: 1, orderNo: 'OUT20240101001', ingredientName: '西红柿', department: '后厨', operator: '张师傅', quantity: 10, unit: 'kg', price: 6.5, totalAmount: 65, batchNo: 'B20240101', createdAt: '2024-01-01 11:00:00', status: 1 },
-      { id: 2, orderNo: 'OUT20240101002', ingredientName: '牛肉', department: '后厨', operator: '李师傅', quantity: 5, unit: 'kg', price: 68, totalAmount: 340, batchNo: 'B20240102', createdAt: '2024-01-01 11:30:00', status: 1 }
-    ]
-    pagination.itemCount = 2
+    dataList.value = []
+    pagination.itemCount = 0
+    console.error('fetch outbound list error:', e)
   } finally {
     loading.value = false
   }
@@ -420,8 +419,7 @@ async function handleCancel(row) {
     message.success('取消成功')
     fetchData()
   } catch (e) {
-    row.status = 0
-    message.success('取消成功')
+    console.error('cancel outbound error:', e)
   }
 }
 

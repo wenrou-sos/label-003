@@ -219,19 +219,11 @@ async function fetchData() {
     categoryOptions.value = flattenCategories(catData)
     categoryTreeOptions.value = buildCategoryTree(catData)
   } catch (e) {
-    dataList.value = [
-      { id: 1, code: 'ING001', name: '西红柿', categoryName: '蔬菜类', spec: '500g', unit: 'kg', price: 6.5, status: 1, safeStock: 10, shelfLifeWarningDays: 3 },
-      { id: 2, code: 'ING002', name: '黄瓜', categoryName: '蔬菜类', spec: '500g', unit: 'kg', price: 4.0, status: 1, safeStock: 10, shelfLifeWarningDays: 3 },
-      { id: 3, code: 'ING003', name: '牛肉', categoryName: '肉类', spec: '500g', unit: 'kg', price: 68.0, status: 1, safeStock: 5, shelfLifeWarningDays: 7 }
-    ]
-    pagination.itemCount = 3
-    const mockCat = [
-      { id: 1, name: '蔬菜类', children: [{ id: 11, name: '绿叶菜' }] },
-      { id: 2, name: '肉类', children: [{ id: 21, name: '猪肉' }, { id: 22, name: '牛肉' }] },
-      { id: 3, name: '调料类' }
-    ]
-    categoryOptions.value = flattenCategories(mockCat)
-    categoryTreeOptions.value = buildCategoryTree(mockCat)
+    dataList.value = []
+    pagination.itemCount = 0
+    categoryOptions.value = []
+    categoryTreeOptions.value = []
+    console.error('fetch ingredient data error:', e)
   } finally {
     loading.value = false
   }
@@ -311,9 +303,7 @@ async function handleSubmit(e) {
     modalVisible.value = false
     fetchData()
   } catch (e) {
-    message.success(isEdit.value ? '编辑成功' : '新增成功')
-    modalVisible.value = false
-    fetchData()
+    console.error('submit ingredient error:', e)
   }
   return false
 }
@@ -330,8 +320,7 @@ function handleDelete(row) {
         message.success('删除成功')
         fetchData()
       } catch (e) {
-        dataList.value = dataList.value.filter(item => item.id !== row.id)
-        message.success('删除成功')
+        console.error('delete ingredient error:', e)
       }
     }
   })

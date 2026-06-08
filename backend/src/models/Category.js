@@ -10,8 +10,12 @@ const Category = sequelize.define('Category', {
   name: {
     type: DataTypes.STRING(50),
     allowNull: false,
-    unique: true,
     comment: '分类名称'
+  },
+  parentId: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    comment: '父分类ID, NULL表示顶级分类'
   },
   sort: {
     type: DataTypes.INTEGER,
@@ -24,7 +28,13 @@ const Category = sequelize.define('Category', {
   }
 }, {
   tableName: 'categories',
-  timestamps: true
+  timestamps: true,
+  indexes: [
+    {
+      unique: true,
+      fields: ['name', 'parentId']
+    }
+  ]
 });
 
 module.exports = Category;

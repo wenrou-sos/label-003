@@ -4,18 +4,31 @@ const response = require('../utils/response');
 
 const createCategory = async (req, res, next) => {
   try {
-    const { name, sort, remark } = req.body;
+    const { name, parentId, sort, remark } = req.body;
 
     if (!name) {
       return res.status(400).json(response.error('分类名称不能为空', 400));
     }
 
-    const exist = await Category.findOne({ where: { name } });
-    if (exist) {
-      return res.status(400).json(response.error('分类名称已存在', 400));
+    if (parentId !== null && parentId !== undefined) {
+      const parent = await Category.findByPk(parentId);
+      if (!parent) {
+        return res.status(400).json(response.error('父分类不存在', 400));
+      }
     }
 
-    const category = await Category.create({ name, sort, remark });
+    const existWhere = { name };
+    if (parentId === null || parentId === undefined) {
+      existWhere.parentId = null;
+    } else {
+      existWhere.parentId = parentId;
+    }
+    const exist = await Category.findOne({ where: existWhere });
+    if (exist) {
+      return res.status(400).json(response.error('同级分类名称已存在', 400));
+    }
+
+    const category = await Category.create({ name, parentId, sort, remark });
     res.json(response.success(category, '创建成功'));
   } catch (err) {
     next(err);
@@ -74,21 +87,43 @@ const getCategory = async (req, res, next) => {
 const updateCategory = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { name, sort, remark } = req.body;
+    const { name, parentId, sort, remark } = req.body;
 
     const category = await Category.findByPk(id);
     if (!category) {
       return res.status(404).json(response.error('分类不存在', 404));
     }
 
-    if (name && name !== category.name) {
-      const exist = await Category.findOne({ where: { name } });
-      if (exist) {
-        return res.status(400).json(response.error('分类名称已存在', 400));
+    if (parentId !== undefined) {
+      if (parentId !== null) {
+        if (parseInt(parentId) === parseInt(id)) {
+          return res.status(400).json(response.error('不能将自己设为父分类', 400));
+        }
+        const parent = await Category.findByPk(parentId);
+        if (!parent) {
+          return res.status(400).json(response.error('父分类不存在', 400));
+        }
       }
     }
 
-    await category.update({ name, sort, remark });
+    const effectiveParentId = parentId !== undefined ? parentId : category.parentId;
+    const effectiveName = name !== undefined ? name : category.name;
+
+    if (effectiveName !== category.name || effectiveParentId !== category.parentId) {
+      const existWhere = { name: effectiveName };
+      if (effectiveParentId === null || effectiveParentId === undefined) {
+        existWhere.parentId = null;
+      } else {
+        existWhere.parentId = effectiveParentId;
+      }
+      existWhere.id = { [Op.ne]: id };
+      const exist = await Category.findOne({ where: existWhere });
+      if (exist) {
+        return res.status(400).json(response.error('同级分类名称已存在', 400));
+      }
+    }
+
+    await category.update({ name, parentId, sort, remark });
     res.json(response.success(category, '更新成功'));
   } catch (err) {
     next(err);
@@ -111,6 +146,24 @@ const deleteCategory = async (req, res, next) => {
   }
 };
 
+const buildCategoryTree = (categories, parentId = null) => {
+  return categories
+    .filter(cat => parentId === null ? cat.parentId === null : cat.parentId === parentId)
+    .sort((a, b) => a.sort - b.sort || b.id - a.id)
+    .map(cat => {
+      const children = buildCategoryTree(categories, cat.id);
+      return {
+        id: cat.id,
+        name: cat.name,
+        parentId: cat.parentId,
+        sort: cat.sort,
+        remark: cat.remark,
+        type: 'category',
+        children
+      };
+    });
+};
+
 const getCategoryTree = async (req, res, next) => {
   try {
     const categories = await Category.findAll({
@@ -122,25 +175,26 @@ const getCategoryTree = async (req, res, next) => {
       order: [['id', 'DESC']]
     });
 
-    const tree = categories.map(category => {
-      const children = ingredients
-        .filter(ing => ing.categoryId === category.id)
-        .map(ing => ({
-          id: ing.id,
-          name: ing.name,
-          unit: ing.unit,
-          type: 'ingredient'
-        }));
+    const attachIngredients = (nodes) => {
+      return nodes.map(node => {
+        if (node.children && node.children.length > 0) {
+          node.children = attachIngredients(node.children);
+        }
+        const ingChildren = ingredients
+          .filter(ing => ing.categoryId === node.id)
+          .map(ing => ({
+            id: ing.id,
+            name: ing.name,
+            unit: ing.unit,
+            type: 'ingredient'
+          }));
+        node.children = [...node.children, ...ingChildren];
+        return node;
+      });
+    };
 
-      return {
-        id: category.id,
-        name: category.name,
-        sort: category.sort,
-        remark: category.remark,
-        type: 'category',
-        children
-      };
-    });
+    const categoryTree = buildCategoryTree(categories, null);
+    const tree = attachIngredients(categoryTree);
 
     res.json(response.success(tree));
   } catch (err) {

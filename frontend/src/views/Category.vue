@@ -202,8 +202,7 @@ async function handleDelete(node) {
     message.success('删除成功')
     fetchData()
   } catch (e) {
-    deleteNodeFromTree(treeData.value, node.id || node.value)
-    message.success('删除成功')
+    console.error('delete category error:', e)
   }
 }
 
@@ -244,33 +243,7 @@ async function handleSubmit(e) {
     modalVisible.value = false
     fetchData()
   } catch (e) {
-    const node = {
-      value: Date.now(),
-      id: Date.now(),
-      label: formData.name,
-      sort: formData.sort,
-      remark: formData.remark,
-      parentId: formData.parentId,
-      children: []
-    }
-    if (isEdit.value) {
-      const target = findNodeById(treeData.value, formData.id)
-      if (target) {
-        target.label = formData.name
-        target.sort = formData.sort
-        target.remark = formData.remark
-      }
-    } else if (!formData.parentId) {
-      treeData.value.push(node)
-    } else {
-      const parent = findNodeById(treeData.value, formData.parentId)
-      if (parent) {
-        if (!parent.children) parent.children = []
-        parent.children.push(node)
-      }
-    }
-    message.success(isEdit.value ? '编辑成功' : '新增成功')
-    modalVisible.value = false
+    console.error('submit category error:', e)
   }
   return false
 }
@@ -339,50 +312,11 @@ async function fetchData() {
     const res = await getCategoryTree()
     treeData.value = transformData(res.data || res || [])
   } catch (e) {
-    treeData.value = transformData(getMockData())
+    treeData.value = []
+    console.error('fetch category data error:', e)
   } finally {
     loading.value = false
   }
-}
-
-function getMockData() {
-  return [
-    {
-      id: 1, name: '蔬菜类', sort: 1, remark: '新鲜蔬菜',
-      children: [
-        { id: 11, name: '绿叶菜', sort: 1, remark: '', children: [
-          { id: 111, name: '白菜', sort: 1, remark: '', children: [] },
-          { id: 112, name: '菠菜', sort: 2, remark: '', children: [] }
-        ]},
-        { id: 12, name: '根茎类', sort: 2, remark: '', children: [
-          { id: 121, name: '土豆', sort: 1, remark: '', children: [] },
-          { id: 122, name: '萝卜', sort: 2, remark: '', children: [] }
-        ]}
-      ]
-    },
-    {
-      id: 2, name: '肉类', sort: 2, remark: '生肉及肉制品',
-      children: [
-        { id: 21, name: '猪肉', sort: 1, remark: '', children: [] },
-        { id: 22, name: '牛肉', sort: 2, remark: '', children: [] },
-        { id: 23, name: '鸡肉', sort: 3, remark: '', children: [] }
-      ]
-    },
-    {
-      id: 3, name: '调料类', sort: 3, remark: '',
-      children: [
-        { id: 31, name: '酱油醋', sort: 1, remark: '', children: [] },
-        { id: 32, name: '盐糖味精', sort: 2, remark: '', children: [] }
-      ]
-    },
-    {
-      id: 4, name: '米面类', sort: 4, remark: '',
-      children: [
-        { id: 41, name: '大米', sort: 1, remark: '', children: [] },
-        { id: 42, name: '面粉', sort: 2, remark: '', children: [] }
-      ]
-    }
-  ]
 }
 
 onMounted(fetchData)

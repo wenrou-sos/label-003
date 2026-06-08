@@ -41,7 +41,6 @@ import { useMessage, NIcon, NTag } from 'naive-ui'
 import { DocumentTextOutline, DownloadOutline } from '@vicons/ionicons5'
 import { getReportList, exportReport } from '@/api/report'
 import { formatDate, formatNumber } from '@/utils'
-import * as XLSX from 'xlsx'
 
 const message = useMessage()
 
@@ -99,12 +98,9 @@ async function fetchData() {
     dataList.value = res.data?.list || res.data || []
     pagination.itemCount = res.data?.total || 0
   } catch (e) {
-    dataList.value = [
-      { id: 1, type: 'inbound', orderNo: 'IN20240101001', ingredientName: '西红柿', batchNo: 'B20240101', quantity: 50, unit: 'kg', price: 6.5, totalAmount: 325, operator: '管理员', createdAt: '2024-01-01 09:30:00' },
-      { id: 2, type: 'outbound', orderNo: 'OUT20240101001', ingredientName: '西红柿', batchNo: 'B20240101', quantity: 10, unit: 'kg', price: 6.5, totalAmount: 65, operator: '张师傅', createdAt: '2024-01-01 11:00:00' },
-      { id: 3, type: 'inbound', orderNo: 'IN20240101002', ingredientName: '牛肉', batchNo: 'B20240102', quantity: 20, unit: 'kg', price: 68, totalAmount: 1360, operator: '管理员', createdAt: '2024-01-01 10:15:00' }
-    ]
-    pagination.itemCount = 3
+    dataList.value = []
+    pagination.itemCount = 0
+    console.error('fetch report list error:', e)
   } finally {
     loading.value = false
   }
@@ -134,22 +130,7 @@ async function handleExport() {
     downloadBlob(res, `出入库流水_${formatDate(new Date(), 'YYYYMMDD')}.xlsx`)
     message.success('导出成功')
   } catch (e) {
-    const exportData = dataList.value.map(item => ({
-      '单据类型': item.type === 'inbound' ? '入库' : '出库',
-      '单号': item.orderNo,
-      '食材名称': item.ingredientName,
-      '批次号': item.batchNo,
-      '数量': (item.type === 'inbound' ? '+' : '-') + item.quantity + ' ' + item.unit,
-      '单价(元)': item.price,
-      '金额(元)': item.totalAmount,
-      '操作人': item.operator,
-      '时间': item.createdAt
-    }))
-    const ws = XLSX.utils.json_to_sheet(exportData)
-    const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, '出入库流水')
-    XLSX.writeFile(wb, `出入库流水_${formatDate(new Date(), 'YYYYMMDD')}.xlsx`)
-    message.success('导出成功')
+    console.error('export report error:', e)
   }
 }
 

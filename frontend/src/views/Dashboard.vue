@@ -239,14 +239,10 @@ async function fetchData() {
     summary.value = summaryRes.data || summaryRes || {}
     categoryOptions.value = flattenCategories(categoryRes.data || categoryRes || [])
   } catch (e) {
-    dataList.value = getMockData()
-    summary.value = { total: 156, todayInbound: 23, todayOutbound: 18, lowStock: 8 }
-    categoryOptions.value = [
-      { label: '蔬菜类', value: 1 },
-      { label: '肉类', value: 2 },
-      { label: '调料类', value: 3 },
-      { label: '米面类', value: 4 }
-    ]
+    dataList.value = []
+    summary.value = {}
+    categoryOptions.value = []
+    console.error('fetch dashboard data error:', e)
   } finally {
     loading.value = false
   }
@@ -269,31 +265,6 @@ function handlePageChange(page) {
 function handlePageSizeChange(size) {
   pagination.pageSize = size
   pagination.page = 1
-}
-
-function getMockData() {
-  const list = []
-  const names = ['西红柿', '黄瓜', '土豆', '青椒', '白菜', '牛肉', '猪肉', '鸡肉', '生抽', '老抽', '盐', '味精', '大米', '面粉', '鸡蛋']
-  const categories = ['蔬菜类', '蔬菜类', '蔬菜类', '蔬菜类', '蔬菜类', '肉类', '肉类', '肉类', '调料类', '调料类', '调料类', '调料类', '米面类', '米面类', '蛋品类']
-  const units = ['kg', 'kg', 'kg', 'kg', 'kg', 'kg', 'kg', 'kg', '瓶', '瓶', '袋', '袋', 'kg', 'kg', '个']
-  for (let i = 0; i < 25; i++) {
-    const idx = i % names.length
-    const qty = Math.floor(Math.random() * 200) - 10
-    list.push({
-      id: i + 1,
-      name: names[idx],
-      categoryName: categories[idx],
-      categoryId: (idx % 4) + 1,
-      spec: '500g',
-      unit: units[idx],
-      quantity: qty > 0 ? qty : 0,
-      price: (Math.random() * 50 + 2).toFixed(2),
-      warningThreshold: 10,
-      isLowStock: qty < 10,
-      updatedAt: new Date(Date.now() - Math.random() * 86400000 * 7).toISOString()
-    })
-  }
-  return list
 }
 
 onMounted(fetchData)

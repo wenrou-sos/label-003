@@ -133,20 +133,9 @@ async function fetchData() {
     detail.value = res.data?.info || res.data || {}
     dataList.value = res.data?.items || res.data?.details || []
   } catch (e) {
-    detail.value = {
-      id: route.params.id,
-      orderNo: 'ST20240101001',
-      name: '月度盘点-1月',
-      operator: '管理员',
-      createdAt: '2024-01-01 14:00:00',
-      status: 0,
-      remark: '月末常规盘点'
-    }
-    dataList.value = [
-      { id: 1, ingredientName: '西红柿', spec: '500g', unit: 'kg', systemQty: 50, actualQty: 48, price: 6.5 },
-      { id: 2, ingredientName: '黄瓜', spec: '500g', unit: 'kg', systemQty: 30, actualQty: 30, price: 4.0 },
-      { id: 3, ingredientName: '牛肉', spec: '500g', unit: 'kg', systemQty: 15, actualQty: 16, price: 68.0 }
-    ]
+    detail.value = {}
+    dataList.value = []
+    console.error('fetch stocktake detail error:', e)
   } finally {
     loading.value = false
   }
@@ -158,8 +147,7 @@ async function handleSubmit() {
     message.success('提交成功')
     fetchData()
   } catch (e) {
-    detail.value.status = 1
-    message.success('提交成功')
+    console.error('submit stocktake error:', e)
   }
 }
 

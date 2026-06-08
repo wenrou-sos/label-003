@@ -416,7 +416,8 @@ async function handleView(row) {
     const res = await getInboundDetail(row.id)
     detailData.value = res.data?.info || res.data || {}
   } catch (e) {
-    detailData.value = { ...row }
+    detailData.value = {}
+    console.error('fetch inbound detail error:', e)
   } finally {
     detailLoading.value = false
   }
@@ -429,11 +430,9 @@ async function fetchData() {
     dataList.value = res.data?.list || res.data || []
     pagination.itemCount = res.data?.total || 0
   } catch (e) {
-    dataList.value = [
-      { id: 1, orderNo: 'IN20240101001', ingredientName: '西红柿', supplierName: '永辉生鲜', quantity: 50, unit: 'kg', price: 6.5, totalAmount: 325, batchNo: 'B20240101', createdAt: '2024-01-01 09:30:00', status: 1 },
-      { id: 2, orderNo: 'IN20240101002', ingredientName: '牛肉', supplierName: '恒都牛肉', quantity: 20, unit: 'kg', price: 68, totalAmount: 1360, batchNo: 'B20240102', createdAt: '2024-01-01 10:15:00', status: 1 }
-    ]
-    pagination.itemCount = 2
+    dataList.value = []
+    pagination.itemCount = 0
+    console.error('fetch inbound list error:', e)
   } finally {
     loading.value = false
   }
@@ -462,8 +461,7 @@ async function handleCancel(row) {
     message.success('取消成功')
     fetchData()
   } catch (e) {
-    row.status = 0
-    message.success('取消成功')
+    console.error('cancel inbound error:', e)
   }
 }
 

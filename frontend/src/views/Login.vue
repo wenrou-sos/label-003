@@ -102,8 +102,8 @@ async function handleLogin() {
   try {
     const res = await loginApi(formData)
     if (res.code === 0 || res.token) {
-      userStore.setToken(res.token || res.data?.token || 'mock-token')
-      userStore.setUserInfo(res.user || res.data?.user || { name: formData.username, role: 'admin' })
+      userStore.setToken(res.token || res.data?.token)
+      userStore.setUserInfo(res.user || res.data?.user)
       message.success('登录成功')
       const redirect = route.query.redirect || '/dashboard'
       router.push(redirect)
@@ -111,19 +111,8 @@ async function handleLogin() {
       message.error(res.message || '登录失败')
     }
   } catch (e) {
-    if (e.response) {
-      message.error(e.response.data?.message || '登录失败，请检查账号密码')
-    } else {
-      userStore.setToken('mock-token')
-      userStore.setUserInfo({
-        name: formData.username === 'admin' ? '管理员' : '操作员',
-        username: formData.username,
-        role: formData.username === 'admin' ? 'admin' : 'operator'
-      })
-      message.success('登录成功（演示模式）')
-      const redirect = route.query.redirect || '/dashboard'
-      router.push(redirect)
-    }
+    message.error(e.response?.data?.message || e.message || '登录失败，请检查账号密码')
+    console.error('login error:', e)
   } finally {
     loading.value = false
   }

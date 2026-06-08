@@ -169,11 +169,9 @@ async function fetchData() {
     dataList.value = res.data?.list || res.data || []
     pagination.itemCount = res.data?.total || 0
   } catch (e) {
-    dataList.value = [
-      { id: 1, name: '永辉生鲜配送有限公司', contact: '王经理', phone: '13800138001', email: 'wang@yonghui.com', address: '北京市朝阳区xxx路xxx号', status: 1 },
-      { id: 2, name: '恒都牛肉供应商', contact: '李总', phone: '13900139002', email: 'li@hengdu.com', address: '北京市丰台区xxx路xxx号', status: 1 }
-    ]
-    pagination.itemCount = 2
+    dataList.value = []
+    pagination.itemCount = 0
+    console.error('fetch supplier list error:', e)
   } finally {
     loading.value = false
   }
@@ -252,9 +250,7 @@ async function handleSubmit(e) {
     modalVisible.value = false
     fetchData()
   } catch (e) {
-    message.success(isEdit.value ? '编辑成功' : '新增成功')
-    modalVisible.value = false
-    fetchData()
+    console.error('submit supplier error:', e)
   }
   return false
 }
@@ -271,8 +267,7 @@ function handleDelete(row) {
         message.success('删除成功')
         fetchData()
       } catch (e) {
-        dataList.value = dataList.value.filter(item => item.id !== row.id)
-        message.success('删除成功')
+        console.error('delete supplier error:', e)
       }
     }
   })

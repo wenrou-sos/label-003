@@ -44,7 +44,7 @@ const PORT = process.env.PORT || 3000;
 sequelize.authenticate()
   .then(() => {
     console.log('数据库连接成功');
-    return sequelize.sync({ alter: true });
+    return sequelize.sync({ force: false });
   })
   .then(() => {
     console.log('模型同步完成');

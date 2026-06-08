@@ -158,11 +158,9 @@ async function fetchData() {
     dataList.value = res.data?.list || res.data || []
     pagination.itemCount = res.data?.total || 0
   } catch (e) {
-    dataList.value = [
-      { id: 1, orderNo: 'ST20240101001', name: '月度盘点-1月', operator: '管理员', itemCount: 50, diffCount: 3, createdAt: '2024-01-01 14:00:00', status: 2 },
-      { id: 2, orderNo: 'ST20240115001', name: '半月度盘点', operator: '管理员', itemCount: 48, diffCount: 0, createdAt: '2024-01-15 10:00:00', status: 1 }
-    ]
-    pagination.itemCount = 2
+    dataList.value = []
+    pagination.itemCount = 0
+    console.error('fetch stocktake list error:', e)
   } finally {
     loading.value = false
   }
@@ -208,9 +206,7 @@ async function handleSubmitAdd(e) {
       router.push({ name: 'StocktakeDetail', params: { id: res.data.id } })
     }
   } catch (e) {
-    message.success('创建成功')
-    showAddModal.value = false
-    fetchData()
+    console.error('create stocktake error:', e)
   }
 }
 
@@ -224,8 +220,7 @@ async function handleSubmit(row) {
     message.success('提交成功')
     fetchData()
   } catch (e) {
-    row.status = 1
-    message.success('提交成功')
+    console.error('submit stocktake error:', e)
   }
 }
 
@@ -235,8 +230,7 @@ async function handleDelete(row) {
     message.success('删除成功')
     fetchData()
   } catch (e) {
-    dataList.value = dataList.value.filter(item => item.id !== row.id)
-    message.success('删除成功')
+    console.error('delete stocktake error:', e)
   }
 }
 
