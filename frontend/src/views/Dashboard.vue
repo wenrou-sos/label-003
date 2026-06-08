@@ -235,8 +235,17 @@ async function fetchData() {
       getInventorySummary(),
       getCategoryTree()
     ])
-    dataList.value = inventoryRes.data || inventoryRes || []
-    summary.value = summaryRes.data || summaryRes || {}
+    dataList.value = inventoryRes.data?.list || inventoryRes.data || inventoryRes || []
+    const rawSummary = summaryRes.data || summaryRes || {}
+    summary.value = {
+      total: rawSummary.totalItems || 0,
+      todayInbound: 0,
+      todayOutbound: 0,
+      lowStock: rawSummary.expireWarningCount || 0,
+      totalQuantity: rawSummary.totalQuantity || 0,
+      totalAmount: rawSummary.totalAmount || 0,
+      batchCount: rawSummary.batchCount || 0
+    }
     categoryOptions.value = flattenCategories(categoryRes.data || categoryRes || [])
   } catch (e) {
     dataList.value = []

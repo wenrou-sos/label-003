@@ -60,17 +60,21 @@ const getInventoryList = async (req, res, next) => {
     const list = Array.from(inventoryMap.values()).map(item => {
       const ingredient = item.ingredient;
       const totalQty = item.totalQuantity;
-      let warningThreshold = parseFloat(ingredient.warningStock) || 0;
+      const avgPrice = item.totalQuantity > 0 ? (item.totalAmount / item.totalQuantity) : 0;
+      let warningThreshold = parseFloat(ingredient.warningStock) || parseFloat(ingredient.safeStock) || 0;
       let isStockWarning = false;
       let isExpireWarning = false;
+      let latestUpdate = ingredient.updatedAt;
 
       for (const batch of item.batches) {
         if (batch.expireDate) {
           const daysLeft = dayjs(batch.expireDate).diff(now, 'day');
           if (daysLeft <= 7 && daysLeft >= 0) {
             isExpireWarning = true;
-            break;
           }
+        }
+        if (batch.updatedAt && new Date(batch.updatedAt) > new Date(latestUpdate)) {
+          latestUpdate = batch.updatedAt;
         }
       }
 
@@ -78,19 +82,24 @@ const getInventoryList = async (req, res, next) => {
         isStockWarning = true;
       }
 
-      const warningStatus = isStockWarning && isExpireWarning ? 'both' :
-                            isStockWarning ? 'stock' :
-                            isExpireWarning ? 'expire' : 'normal';
-
       return {
-        ingredient,
-        totalQuantity: totalQty.toFixed(2),
-        totalAmount: item.totalAmount.toFixed(2),
-        avgPrice: item.totalQuantity > 0 ? (item.totalAmount / item.totalQuantity).toFixed(2) : '0.00',
+        id: ingredient.id,
+        ingredientId: ingredient.id,
+        name: ingredient.name,
+        code: ingredient.code || '',
+        categoryId: ingredient.categoryId,
+        categoryName: ingredient.category?.name || '',
+        spec: ingredient.spec || '',
+        unit: ingredient.unit,
+        quantity: parseFloat(totalQty.toFixed(2)),
+        price: parseFloat(avgPrice.toFixed(2)),
+        totalValue: parseFloat(item.totalAmount.toFixed(2)),
+        warningThreshold,
+        isLowStock: isStockWarning,
+        isExpireWarning,
         batchCount: item.batches.length,
-        warningStatus,
-        isStockWarning,
-        isExpireWarning
+        status: 1,
+        updatedAt: latestUpdate
       };
     });
 

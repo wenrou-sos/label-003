@@ -34,13 +34,13 @@
 
     <n-modal
       v-model:show="modalVisible"
-      preset="card"
+      preset="dialog"
       :title="isEdit ? '编辑食材' : '新增食材'"
       style="width: 520px;"
-      @positive-click="handleSubmit"
-      @negative-click="modalVisible = false"
       positive-text="确定"
       negative-text="取消"
+      @positive-click="handleSubmit"
+      @negative-click="modalVisible = false"
     >
       <n-form
         ref="formRef"

@@ -2,6 +2,7 @@ const { Op } = require('sequelize');
 const dayjs = require('dayjs');
 const {
   sequelize,
+  User,
   Stocktake,
   StocktakeItem,
   InventoryBatch,
@@ -20,7 +21,9 @@ const createStocktake = async (req, res, next) => {
   const transaction = await sequelize.transaction();
 
   try {
-    const { stocktakeDate, categoryId, ingredientIds, remark } = req.body;
+    let { name, stocktakeDate, categoryId, ingredientIds, remark } = req.body;
+
+    if (!stocktakeDate) stocktakeDate = new Date();
 
     const stocktakeNo = generateStocktakeNo();
 
@@ -44,7 +47,8 @@ const createStocktake = async (req, res, next) => {
 
     const stocktake = await Stocktake.create({
       stocktakeNo,
-      stocktakeDate: stocktakeDate || new Date(),
+      name: name || `${stocktakeNo}盘点`,
+      stocktakeDate,
       status: 'draft',
       operatorId: req.user?.id,
       remark
@@ -89,7 +93,10 @@ const getStocktakes = async (req, res, next) => {
 
     const where = {};
     if (keyword) {
-      where.stocktakeNo = { [Op.like]: `%${keyword}%` };
+      where[Op.or] = [
+        { stocktakeNo: { [Op.like]: `%${keyword}%` } },
+        { name: { [Op.like]: `%${keyword}%` } }
+      ];
     }
     if (status) {
       where.status = status;
@@ -106,12 +113,41 @@ const getStocktakes = async (req, res, next) => {
 
     const { count, rows } = await Stocktake.findAndCountAll({
       where,
+      include: [
+        { model: User, as: 'operator', attributes: ['id', 'username', 'realName'] },
+        { model: StocktakeItem, as: 'items', attributes: ['id', 'diffQuantity'] }
+      ],
       order: [['stocktakeDate', 'DESC'], ['id', 'DESC']],
       offset,
       limit: parseInt(pageSize)
     });
 
-    res.json(response.page(rows, count, page, pageSize));
+    const list = rows.map(st => {
+      const items = st.items || [];
+      const itemCount = items.length;
+      const diffCount = items.filter(it => parseFloat(it.diffQuantity) !== 0).length;
+      const statusMap = { draft: 0, confirmed: 1, cancelled: 2 };
+
+      return {
+        id: st.id,
+        orderNo: st.stocktakeNo,
+        stocktakeNo: st.stocktakeNo,
+        name: st.name || st.stocktakeNo,
+        stocktakeDate: st.stocktakeDate,
+        operatorId: st.operatorId,
+        operator: st.operator?.realName || st.operator?.username || '',
+        operatorName: st.operator?.realName || st.operator?.username || '',
+        itemCount,
+        diffCount,
+        status: statusMap[st.status] ?? 0,
+        statusText: st.status,
+        remark: st.remark || '',
+        createdAt: st.createdAt,
+        updatedAt: st.updatedAt
+      };
+    });
+
+    res.json(response.page(list, count, page, pageSize));
   } catch (err) {
     next(err);
   }

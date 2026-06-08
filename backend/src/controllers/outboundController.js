@@ -23,11 +23,15 @@ const createOutbound = async (req, res, next) => {
   });
 
   try {
-    const { outboundDate, outboundType, items, remark } = req.body;
+    let { outboundDate, outboundType, items, remark } = req.body;
 
     if (!items || !Array.isArray(items) || items.length === 0) {
-      await transaction.rollback();
-      return res.status(400).json(response.error('出库明细不能为空', 400));
+      if (req.body.ingredientId) {
+        items = [req.body];
+      } else {
+        await transaction.rollback();
+        return res.status(400).json(response.error('出库明细不能为空', 400));
+      }
     }
 
     const outboundNo = generateOutboundNo();
@@ -36,7 +40,7 @@ const createOutbound = async (req, res, next) => {
     const ingredientIds = new Set();
 
     for (const item of items) {
-      const { ingredientId, quantity } = item;
+      const { ingredientId, quantity, department, operator, remark: itemRemark } = item;
 
       if (!ingredientId || !quantity || quantity <= 0) {
         throw new Error('出库明细数据不完整');
@@ -110,6 +114,9 @@ const createOutbound = async (req, res, next) => {
         quantity: totalDeductedQty,
         unitPrice: avgPrice.toFixed(2),
         amount: itemTotalAmount.toFixed(2),
+        department,
+        operator,
+        remark: itemRemark,
         batchDetails: JSON.stringify(batchDetails)
       }, { transaction });
 
@@ -143,7 +150,7 @@ const createOutbound = async (req, res, next) => {
     }, '出库成功'));
   } catch (err) {
     await transaction.rollback();
-    if (err.message && (err.message.includes('库存不足') || err.message.includes('数据不完整'))) {
+    if (err.message && (err.message.includes('库存不足') || err.message.includes('数据不完整') || err.message.includes('不能为空'))) {
       return res.status(400).json(response.error(err.message, 400));
     }
     next(err);
@@ -198,31 +205,78 @@ const getOutbounds = async (req, res, next) => {
     const { page = 1, pageSize = 10, keyword, outboundType, startDate, endDate } = req.query;
     const offset = (page - 1) * pageSize;
 
-    const where = {};
-    if (keyword) {
-      where.outboundNo = { [Op.like]: `%${keyword}%` };
-    }
+    const outboundWhere = {};
     if (outboundType) {
-      where.outboundType = outboundType;
+      outboundWhere.outboundType = outboundType;
     }
     if (startDate && endDate) {
-      where.outboundDate = {
+      outboundWhere.outboundDate = {
         [Op.between]: [new Date(startDate), new Date(endDate + ' 23:59:59')]
       };
     } else if (startDate) {
-      where.outboundDate = { [Op.gte]: new Date(startDate) };
+      outboundWhere.outboundDate = { [Op.gte]: new Date(startDate) };
     } else if (endDate) {
-      where.outboundDate = { [Op.lte]: new Date(endDate + ' 23:59:59') };
+      outboundWhere.outboundDate = { [Op.lte]: new Date(endDate + ' 23:59:59') };
     }
 
-    const { count, rows } = await Outbound.findAndCountAll({
-      where,
-      order: [['outboundDate', 'DESC'], ['id', 'DESC']],
+    const ingredientWhere = {};
+    if (keyword) {
+      ingredientWhere.name = { [Op.like]: `%${keyword}%` };
+    }
+
+    const itemWhere = {};
+    if (keyword) {
+      itemWhere[Op.or] = [
+        { '$outbound.outboundNo$': { [Op.like]: `%${keyword}%` } },
+        { '$ingredient.name$': { [Op.like]: `%${keyword}%` } }
+      ];
+    }
+
+    const { count, rows } = await OutboundItem.findAndCountAll({
+      where: itemWhere,
+      include: [
+        { model: Outbound, as: 'outbound', where: outboundWhere, required: true, attributes: ['id', 'outboundNo', 'outboundDate', 'outboundType', 'totalAmount', 'remark', 'createdAt'] },
+        { model: Ingredient, as: 'ingredient', attributes: ['id', 'name', 'unit'], where: Object.keys(ingredientWhere).length ? ingredientWhere : undefined }
+      ],
+      order: [
+        [{ model: Outbound, as: 'outbound' }, 'outboundDate', 'DESC'],
+        ['id', 'DESC']
+      ],
+      distinct: true,
       offset,
       limit: parseInt(pageSize)
     });
 
-    res.json(response.page(rows, count, page, pageSize));
+    const list = rows.map(item => {
+      const qty = parseFloat(item.quantity || 0);
+      const price = parseFloat(item.unitPrice || 0);
+      const batchDetails = item.batchDetails ? JSON.parse(item.batchDetails) : [];
+      const batchNo = batchDetails.length > 0 ? batchDetails.map(b => b.batchNo).join(', ') : '';
+      return {
+        id: item.id,
+        outboundId: item.outboundId,
+        orderNo: item.outbound?.outboundNo || '',
+        outboundNo: item.outbound?.outboundNo || '',
+        ingredientId: item.ingredientId,
+        ingredientName: item.ingredient?.name || '',
+        unit: item.ingredient?.unit || '',
+        department: item.department || '',
+        operator: item.operator || '',
+        quantity: qty,
+        price: price,
+        totalAmount: parseFloat(item.amount || (qty * price).toFixed(2)),
+        batchNo: batchNo,
+        batchDetails: batchDetails,
+        outboundType: item.outbound?.outboundType || 'normal',
+        outboundDate: item.outbound?.outboundDate,
+        remark: item.outbound?.remark || item.remark || '',
+        status: 1,
+        createdAt: item.outbound?.createdAt || item.createdAt,
+        updatedAt: item.updatedAt
+      };
+    });
+
+    res.json(response.page(list, count, page, pageSize));
   } catch (err) {
     next(err);
   }
@@ -323,21 +377,34 @@ const batchCreateOutbound = async (req, res, next) => {
   });
 
   try {
-    const { records } = req.body;
+    let { records, items } = req.body;
 
     if (!records || !Array.isArray(records) || records.length === 0) {
-      await transaction.rollback();
-      return res.status(400).json(response.error('出库数据不能为空', 400));
+      if (items && Array.isArray(items) && items.length > 0) {
+        records = items.map(item => ({
+          outboundDate: item.outboundDate,
+          outboundType: item.outboundType,
+          remark: item.remark,
+          items: [item]
+        }));
+      } else {
+        await transaction.rollback();
+        return res.status(400).json(response.error('出库数据不能为空', 400));
+      }
     }
 
     const results = [];
     const allIngredientIds = new Set();
 
     for (const record of records) {
-      const { outboundDate, outboundType, items, remark } = record;
+      let { outboundDate, outboundType, items: recItems, remark } = record;
 
-      if (!items || !Array.isArray(items) || items.length === 0) {
-        throw new Error('出库明细不能为空');
+      if (!recItems || !Array.isArray(recItems) || recItems.length === 0) {
+        if (record.ingredientId) {
+          recItems = [record];
+        } else {
+          throw new Error('出库明细不能为空');
+        }
       }
 
       const outboundNo = generateOutboundNo();
@@ -345,8 +412,8 @@ const batchCreateOutbound = async (req, res, next) => {
       const outboundItemPromises = [];
       const ingredientIds = new Set();
 
-      for (const item of items) {
-        const { ingredientId, quantity } = item;
+      for (const item of recItems) {
+        const { ingredientId, quantity, department, operator, remark: itemRemark } = item;
 
         if (!ingredientId || !quantity || quantity <= 0) {
           throw new Error('出库明细数据不完整');
@@ -421,6 +488,9 @@ const batchCreateOutbound = async (req, res, next) => {
           quantity: totalDeductedQty,
           unitPrice: avgPrice.toFixed(2),
           amount: itemTotalAmount.toFixed(2),
+          department,
+          operator,
+          remark: itemRemark,
           batchDetails: JSON.stringify(batchDetails)
         }, { transaction });
 

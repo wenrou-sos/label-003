@@ -13,6 +13,10 @@ const Stocktake = sequelize.define('Stocktake', {
     unique: true,
     comment: '盘点单号'
   },
+  name: {
+    type: DataTypes.STRING(100),
+    comment: '盘点名称'
+  },
   stocktakeDate: {
     type: DataTypes.DATE,
     allowNull: false,

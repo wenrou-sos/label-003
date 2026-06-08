@@ -2,6 +2,7 @@ const { Op } = require('sequelize');
 const XLSX = require('xlsx');
 const dayjs = require('dayjs');
 const {
+  User,
   Inbound,
   Outbound,
   OutboundItem,
@@ -69,21 +70,36 @@ const getInboundRecords = async (req, res, next) => {
       limit: parseInt(pageSize)
     });
 
-    const records = rows.map(batch => ({
-      id: batch.id,
-      type: 'inbound',
-      typeName: '入库',
-      batchNo: batch.batchNo,
-      ingredient: batch.ingredient,
-      supplier: batch.supplier,
-      quantity: batch.originalQuantity,
-      unitPrice: batch.unitPrice,
-      amount: (parseFloat(batch.originalQuantity) * parseFloat(batch.unitPrice)).toFixed(2),
-      date: batch.inboundDate,
-      expireDate: batch.expireDate,
-      remark: batch.remark,
-      createdAt: batch.createdAt
-    }));
+    const records = rows.map(batch => {
+      const qty = parseFloat(batch.originalQuantity) || 0;
+      const price = parseFloat(batch.unitPrice) || 0;
+      return {
+        id: batch.id,
+        type: 'inbound',
+        typeName: '入库',
+        orderNo: batch.batchNo,
+        batchNo: batch.batchNo,
+        ingredientId: batch.ingredientId,
+        ingredientName: batch.ingredient?.name || '',
+        categoryId: batch.ingredient?.categoryId,
+        categoryName: batch.ingredient?.category?.name || '',
+        unit: batch.ingredient?.unit || '',
+        supplierId: batch.supplierId,
+        supplierName: batch.supplier?.name || '',
+        quantity: qty,
+        price: price,
+        totalAmount: parseFloat((qty * price).toFixed(2)),
+        unitPrice: price,
+        amount: parseFloat((qty * price).toFixed(2)),
+        date: batch.inboundDate,
+        inboundDate: batch.inboundDate,
+        expireDate: batch.expireDate,
+        operator: '',
+        operatorName: '',
+        remark: batch.remark || '',
+        createdAt: batch.createdAt
+      };
+    });
 
     res.json(response.page(records, count, page, pageSize));
   } catch (err) {
@@ -136,7 +152,8 @@ const getOutboundRecords = async (req, res, next) => {
           model: Outbound,
           as: 'outbound',
           where: outboundWhere,
-          required: true
+          required: true,
+          include: [{ model: User, as: 'operator', attributes: ['id', 'username', 'realName'] }]
         },
         {
           model: Ingredient,
@@ -153,22 +170,43 @@ const getOutboundRecords = async (req, res, next) => {
       limit: parseInt(pageSize)
     });
 
-    const records = rows.map(item => ({
-      id: item.id,
-      type: 'outbound',
-      typeName: item.outbound.outboundType === 'waste' ? '报损' :
-                item.outbound.outboundType === 'adjust' ? '调整' : '出库',
-      outboundNo: item.outbound.outboundNo,
-      outboundType: item.outbound.outboundType,
-      ingredient: item.ingredient,
-      quantity: item.quantity,
-      unitPrice: item.unitPrice,
-      amount: item.amount,
-      date: item.outbound.outboundDate,
-      remark: item.outbound.remark,
-      batchDetails: item.batchDetails ? JSON.parse(item.batchDetails) : [],
-      createdAt: item.outbound.createdAt
-    }));
+    const records = rows.map(item => {
+      const qty = parseFloat(item.quantity) || 0;
+      const price = parseFloat(item.unitPrice) || 0;
+      const amount = parseFloat(item.amount) || parseFloat((qty * price).toFixed(2));
+      let batchNos = '';
+      try {
+        const batchDetails = item.batchDetails ? JSON.parse(item.batchDetails) : [];
+        batchNos = batchDetails.map(b => b.batchNo).join(', ');
+      } catch (e) { /* ignore */ }
+      return {
+        id: item.id,
+        type: 'outbound',
+        typeName: item.outbound.outboundType === 'waste' ? '报损' :
+                  item.outbound.outboundType === 'adjust' ? '调整' : '出库',
+        orderNo: item.outbound.outboundNo,
+        outboundNo: item.outbound.outboundNo,
+        outboundType: item.outbound.outboundType,
+        ingredientId: item.ingredientId,
+        ingredientName: item.ingredient?.name || '',
+        categoryId: item.ingredient?.categoryId,
+        categoryName: item.ingredient?.category?.name || '',
+        unit: item.ingredient?.unit || '',
+        batchNo: batchNos,
+        department: item.department || '',
+        operator: item.operator || '',
+        operatorName: item.outbound.operator?.realName || item.outbound.operator?.username || item.operator || '',
+        quantity: qty,
+        price: price,
+        totalAmount: amount,
+        unitPrice: price,
+        amount: amount,
+        date: item.outbound.outboundDate,
+        outboundDate: item.outbound.outboundDate,
+        remark: item.outbound.remark || item.remark || '',
+        createdAt: item.outbound.createdAt || item.createdAt
+      };
+    });
 
     res.json(response.page(records, count, page, pageSize));
   } catch (err) {
@@ -246,20 +284,35 @@ const getInboundRecordsInternal = async (params) => {
     ]
   });
 
-  return batches.map(batch => ({
-    id: `in_${batch.id}`,
-    type: 'inbound',
-    typeName: '入库',
-    batchNo: batch.batchNo,
-    ingredient: batch.ingredient,
-    supplier: batch.supplier,
-    quantity: batch.originalQuantity,
-    unitPrice: batch.unitPrice,
-    amount: (parseFloat(batch.originalQuantity) * parseFloat(batch.unitPrice)).toFixed(2),
-    date: batch.inboundDate,
-    expireDate: batch.expireDate,
-    remark: batch.remark
-  }));
+  return batches.map(batch => {
+    const qty = parseFloat(batch.originalQuantity) || 0;
+    const price = parseFloat(batch.unitPrice) || 0;
+    return {
+      id: `in_${batch.id}`,
+      type: 'inbound',
+      typeName: '入库',
+      orderNo: batch.batchNo,
+      batchNo: batch.batchNo,
+      ingredientId: batch.ingredientId,
+      ingredientName: batch.ingredient?.name || '',
+      categoryId: batch.ingredient?.categoryId,
+      categoryName: batch.ingredient?.category?.name || '',
+      unit: batch.ingredient?.unit || '',
+      supplierId: batch.supplierId,
+      supplierName: batch.supplier?.name || '',
+      quantity: qty,
+      price: price,
+      totalAmount: parseFloat((qty * price).toFixed(2)),
+      unitPrice: price,
+      amount: parseFloat((qty * price).toFixed(2)),
+      date: batch.inboundDate,
+      inboundDate: batch.inboundDate,
+      expireDate: batch.expireDate,
+      operator: '',
+      operatorName: '',
+      remark: batch.remark || ''
+    };
+  });
 };
 
 const getOutboundRecordsInternal = async (params) => {
@@ -286,7 +339,13 @@ const getOutboundRecordsInternal = async (params) => {
   const items = await OutboundItem.findAll({
     where: itemWhere,
     include: [
-      { model: Outbound, as: 'outbound', where: outboundWhere, required: true },
+      {
+        model: Outbound,
+        as: 'outbound',
+        where: outboundWhere,
+        required: true,
+        include: [{ model: User, as: 'operator', attributes: ['id', 'username', 'realName'] }]
+      },
       {
         model: Ingredient,
         as: 'ingredient',
@@ -296,20 +355,43 @@ const getOutboundRecordsInternal = async (params) => {
     ]
   });
 
-  return items.map(item => ({
-    id: `out_${item.id}`,
-    type: 'outbound',
-    typeName: item.outbound.outboundType === 'waste' ? '报损' :
-              item.outbound.outboundType === 'adjust' ? '调整' : '出库',
-    outboundNo: item.outbound.outboundNo,
-    outboundType: item.outbound.outboundType,
-    ingredient: item.ingredient,
-    quantity: item.quantity,
-    unitPrice: item.unitPrice,
-    amount: item.amount,
-    date: item.outbound.outboundDate,
-    remark: item.outbound.remark
-  }));
+  return items.map(item => {
+    const qty = parseFloat(item.quantity) || 0;
+    const price = parseFloat(item.unitPrice) || 0;
+    const amount = parseFloat(item.amount) || parseFloat((qty * price).toFixed(2));
+    let batchNos = '';
+    try {
+      const batchDetails = item.batchDetails ? JSON.parse(item.batchDetails) : [];
+      batchNos = batchDetails.map(b => b.batchNo).join(', ');
+    } catch (e) { /* ignore */ }
+    return {
+      id: `out_${item.id}`,
+      type: 'outbound',
+      typeName: item.outbound.outboundType === 'waste' ? '报损' :
+                item.outbound.outboundType === 'adjust' ? '调整' : '出库',
+      orderNo: item.outbound.outboundNo,
+      outboundNo: item.outbound.outboundNo,
+      outboundType: item.outbound.outboundType,
+      ingredientId: item.ingredientId,
+      ingredientName: item.ingredient?.name || '',
+      categoryId: item.ingredient?.categoryId,
+      categoryName: item.ingredient?.category?.name || '',
+      unit: item.ingredient?.unit || '',
+      batchNo: batchNos,
+      department: item.department || '',
+      operator: item.operator || '',
+      operatorName: item.outbound.operator?.realName || item.outbound.operator?.username || item.operator || '',
+      quantity: qty,
+      price: price,
+      totalAmount: amount,
+      unitPrice: price,
+      amount: amount,
+      date: item.outbound.outboundDate,
+      outboundDate: item.outbound.outboundDate,
+      remark: item.outbound.remark || item.remark || '',
+      createdAt: item.outbound.createdAt || item.createdAt
+    };
+  });
 };
 
 const exportInboundExcel = async (req, res, next) => {

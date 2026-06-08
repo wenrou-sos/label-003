@@ -28,18 +28,30 @@ const createInbound = async (req, res, next) => {
   const transaction = await sequelize.transaction();
 
   try {
-    const { supplierId, inboundDate, items, remark } = req.body;
+    let { supplierId, inboundDate, items, remark } = req.body;
 
     if (!items || !Array.isArray(items) || items.length === 0) {
-      await transaction.rollback();
-      return res.status(400).json(response.error('入库明细不能为空', 400));
+      if (req.body.ingredientId) {
+        items = [req.body];
+      } else {
+        await transaction.rollback();
+        return res.status(400).json(response.error('入库明细不能为空', 400));
+      }
+    }
+
+    if (!supplierId && items[0]?.supplierId) {
+      supplierId = items[0].supplierId;
+    }
+    if (!inboundDate && items[0]?.inboundDate) {
+      inboundDate = items[0].inboundDate;
     }
 
     const inboundNo = generateInboundNo();
     let totalAmount = 0;
 
     const batchPromises = items.map(async item => {
-      const { ingredientId, quantity, unitPrice, expireDate, remark: itemRemark } = item;
+      const { ingredientId, quantity, price, unitPrice, expireDate, remark: itemRemark } = item;
+      const finalUnitPrice = unitPrice || price || 0;
 
       if (!ingredientId || !quantity || quantity <= 0) {
         throw new Error('入库明细数据不完整');
@@ -50,7 +62,7 @@ const createInbound = async (req, res, next) => {
         throw new Error(`食材ID ${ingredientId} 不存在`);
       }
 
-      const amount = parseFloat(quantity) * parseFloat(unitPrice || 0);
+      const amount = parseFloat(quantity) * parseFloat(finalUnitPrice || 0);
       totalAmount += amount;
 
       const batchNo = generateBatchNo();
@@ -70,12 +82,12 @@ const createInbound = async (req, res, next) => {
         expireDate: finalExpireDate,
         quantity,
         originalQuantity: quantity,
-        unitPrice: unitPrice || 0,
+        unitPrice: finalUnitPrice,
         remark: itemRemark,
         status: 1
       }, { transaction });
 
-      return { ingredientId, quantity, unitPrice, expireDate: finalExpireDate };
+      return { ingredientId, quantity, unitPrice: finalUnitPrice, expireDate: finalExpireDate };
     });
 
     await Promise.all(batchPromises);
@@ -89,7 +101,7 @@ const createInbound = async (req, res, next) => {
       remark
     }, { transaction });
 
-    await checkAndCreateStockWarnings(items, transaction);
+    await checkAndCreateStockWarnings(items.map(i => ({ ...i, unitPrice: i.unitPrice || i.price })), transaction);
 
     await transaction.commit();
 
@@ -100,6 +112,9 @@ const createInbound = async (req, res, next) => {
     }, '入库成功'));
   } catch (err) {
     await transaction.rollback();
+    if (err.message) {
+      return res.status(400).json(response.error(err.message, 400));
+    }
     next(err);
   }
 };
@@ -157,9 +172,6 @@ const getInbounds = async (req, res, next) => {
     const offset = (page - 1) * pageSize;
 
     const where = {};
-    if (keyword) {
-      where.inboundNo = { [Op.like]: `%${keyword}%` };
-    }
     if (supplierId) {
       where.supplierId = supplierId;
     }
@@ -173,17 +185,56 @@ const getInbounds = async (req, res, next) => {
       where.inboundDate = { [Op.lte]: new Date(endDate + ' 23:59:59') };
     }
 
-    const { count, rows } = await Inbound.findAndCountAll({
-      where,
+    const ingredientWhere = {};
+    if (keyword) {
+      ingredientWhere.name = { [Op.like]: `%${keyword}%` };
+    }
+
+    const batchWhere = { ...where };
+    if (keyword) {
+      batchWhere[Op.or] = [
+        { '$ingredient.name$': { [Op.like]: `%${keyword}%` } },
+        { batchNo: { [Op.like]: `%${keyword}%` } }
+      ];
+    }
+
+    const { count, rows } = await InventoryBatch.findAndCountAll({
+      where: batchWhere,
       include: [
+        { model: Ingredient, as: 'ingredient', attributes: ['id', 'name', 'unit'], where: Object.keys(ingredientWhere).length ? ingredientWhere : undefined },
         { model: Supplier, as: 'supplier', attributes: ['id', 'name'] }
       ],
       order: [['inboundDate', 'DESC'], ['id', 'DESC']],
+      distinct: true,
       offset,
       limit: parseInt(pageSize)
     });
 
-    res.json(response.page(rows, count, page, pageSize));
+    const list = rows.map(batch => {
+      const qty = parseFloat(batch.originalQuantity || batch.quantity || 0);
+      const price = parseFloat(batch.unitPrice || 0);
+      return {
+        id: batch.id,
+        orderNo: batch.batchNo,
+        batchNo: batch.batchNo,
+        ingredientId: batch.ingredientId,
+        ingredientName: batch.ingredient?.name || '',
+        supplierId: batch.supplierId,
+        supplierName: batch.supplier?.name || '',
+        quantity: qty,
+        unit: batch.ingredient?.unit || '',
+        price: price,
+        totalAmount: parseFloat((qty * price).toFixed(2)),
+        inboundDate: batch.inboundDate,
+        expireDate: batch.expireDate,
+        remark: batch.remark,
+        status: batch.status,
+        createdAt: batch.createdAt,
+        updatedAt: batch.updatedAt
+      };
+    });
+
+    res.json(response.page(list, count, page, pageSize));
   } catch (err) {
     next(err);
   }
@@ -285,27 +336,48 @@ const batchCreateInbound = async (req, res, next) => {
   const transaction = await sequelize.transaction();
 
   try {
-    const { records } = req.body;
+    let { records, items } = req.body;
 
     if (!records || !Array.isArray(records) || records.length === 0) {
-      await transaction.rollback();
-      return res.status(400).json(response.error('入库数据不能为空', 400));
+      if (items && Array.isArray(items) && items.length > 0) {
+        records = items.map(item => ({
+          supplierId: item.supplierId,
+          inboundDate: item.inboundDate,
+          remark: item.remark,
+          items: [item]
+        }));
+      } else {
+        await transaction.rollback();
+        return res.status(400).json(response.error('入库数据不能为空', 400));
+      }
     }
 
     const results = [];
 
     for (const record of records) {
-      const { supplierId, inboundDate, items, remark } = record;
+      let { supplierId, inboundDate, items: recItems, remark } = record;
 
-      if (!items || !Array.isArray(items) || items.length === 0) {
-        throw new Error('入库明细不能为空');
+      if (!recItems || !Array.isArray(recItems) || recItems.length === 0) {
+        if (record.ingredientId) {
+          recItems = [record];
+        } else {
+          throw new Error('入库明细不能为空');
+        }
+      }
+
+      if (!supplierId && recItems[0]?.supplierId) {
+        supplierId = recItems[0].supplierId;
+      }
+      if (!inboundDate && recItems[0]?.inboundDate) {
+        inboundDate = recItems[0].inboundDate;
       }
 
       const inboundNo = generateInboundNo();
       let totalAmount = 0;
 
-      const batchPromises = items.map(async item => {
-        const { ingredientId, quantity, unitPrice, expireDate, remark: itemRemark } = item;
+      const batchPromises = recItems.map(async item => {
+        const { ingredientId, quantity, price, unitPrice, expireDate, remark: itemRemark } = item;
+        const finalUnitPrice = unitPrice || price || 0;
 
         if (!ingredientId || !quantity || quantity <= 0) {
           throw new Error('入库明细数据不完整');
@@ -316,7 +388,7 @@ const batchCreateInbound = async (req, res, next) => {
           throw new Error(`食材ID ${ingredientId} 不存在`);
         }
 
-        const amount = parseFloat(quantity) * parseFloat(unitPrice || 0);
+        const amount = parseFloat(quantity) * parseFloat(finalUnitPrice || 0);
         totalAmount += amount;
 
         const batchNo = generateBatchNo();
@@ -336,12 +408,12 @@ const batchCreateInbound = async (req, res, next) => {
           expireDate: finalExpireDate,
           quantity,
           originalQuantity: quantity,
-          unitPrice: unitPrice || 0,
+          unitPrice: finalUnitPrice,
           remark: itemRemark,
           status: 1
         }, { transaction });
 
-        return { ingredientId, quantity, unitPrice, expireDate: finalExpireDate };
+        return { ingredientId, quantity, unitPrice: finalUnitPrice, expireDate: finalExpireDate };
       });
 
       await Promise.all(batchPromises);
@@ -355,7 +427,7 @@ const batchCreateInbound = async (req, res, next) => {
         remark
       }, { transaction });
 
-      await checkAndCreateStockWarnings(items, transaction);
+      await checkAndCreateStockWarnings(recItems.map(i => ({ ...i, unitPrice: i.unitPrice || i.price })), transaction);
 
       results.push({
         id: inbound.id,
