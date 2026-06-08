@@ -15,6 +15,28 @@
       </template>
 
       <n-space style="margin-bottom: 16px;">
+        <n-tag
+          v-if="filters.lowStock"
+          type="warning"
+          closable
+          round
+          size="large"
+          style="margin-right: 8px;"
+          @close="toggleLowStockFilter"
+        >
+          <template #icon><AlertCircleOutline /></template>
+          仅显示低库存
+        </n-tag>
+        <n-button
+          v-else
+          size="medium"
+          type="warning"
+          ghost
+          @click="toggleLowStockFilter"
+        >
+          <template #icon><AlertCircleOutline /></template>
+          筛选低库存
+        </n-button>
         <n-input v-model:value="filters.keyword" placeholder="搜索食材名称/编码" clearable style="width: 240px;" />
         <n-select v-model:value="filters.categoryId" placeholder="选择分类" :options="categoryOptions" clearable style="width: 180px;" />
         <n-button @click="fetchData">查询</n-button>
@@ -87,15 +109,19 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, h } from 'vue'
+import { ref, reactive, computed, onMounted, h, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useMessage, useDialog, NButton, NIcon, NTag } from 'naive-ui'
-import { CubeOutline, AddOutline, PencilOutline, TrashOutline, EyeOutline } from '@vicons/ionicons5'
+import { CubeOutline, AddOutline, PencilOutline, TrashOutline, EyeOutline, AlertCircleOutline } from '@vicons/ionicons5'
 import { getIngredientList, createIngredient, updateIngredient, deleteIngredient } from '@/api/ingredient'
 import { getCategoryTree } from '@/api/category'
+import { getLowStockList } from '@/api/inventory'
 import { formatNumber } from '@/utils'
 
 const message = useMessage()
 const dialog = useDialog()
+const route = useRoute()
+const router = useRouter()
 
 const loading = ref(false)
 const dataList = ref([])
@@ -147,7 +173,8 @@ const rules = {
 
 const filters = reactive({
   keyword: '',
-  categoryId: null
+  categoryId: null,
+  lowStock: false
 })
 
 const pagination = reactive({
@@ -156,20 +183,34 @@ const pagination = reactive({
   itemCount: 0
 })
 
-const columns = [
-  { title: '编码', key: 'code', width: 120 },
-  { title: '食材名称', key: 'name', minWidth: 160 },
-  { title: '分类', key: 'categoryName', width: 120 },
-  { title: '规格', key: 'spec', width: 100 },
-  { title: '单位', key: 'unit', width: 80 },
-  { title: '单价(元)', key: 'price', width: 120, align: 'right', render: (row) => formatNumber(row.price) },
-  {
-    title: '状态',
-    key: 'status',
-    width: 100,
-    render: (row) => h(NTag, { type: row.status === 1 ? 'success' : 'default', size: 'small' }, { default: () => row.status === 1 ? '启用' : '禁用' })
-  },
-  {
+const columns = computed(() => {
+  const baseCols = [
+    { title: '食材名称', key: 'name', minWidth: 160 },
+    { title: '分类', key: 'categoryName', width: 120 },
+    { title: '规格', key: 'spec', width: 100 },
+    { title: '单位', key: 'unit', width: 80 },
+    { title: '单价(元)', key: 'price', width: 120, align: 'right', render: (row) => formatNumber(row.price) }
+  ]
+  if (filters.lowStock) {
+    baseCols.push(
+      { title: '当前库存', key: 'quantity', width: 120, align: 'right', render: (row) => h('span', { style: 'color: #d03050; font-weight: 600;' }, `${formatNumber(row.quantity)} ${row.unit || ''}`) },
+      { title: '预警阈值', key: 'warningThreshold', width: 120, align: 'right', render: (row) => `${formatNumber(row.warningThreshold)} ${row.unit || ''}` },
+      {
+        title: '状态',
+        key: 'status',
+        width: 100,
+        render: () => h(NTag, { type: 'warning', size: 'small' }, { default: () => '低库存' })
+      }
+    )
+  } else {
+    baseCols.push({
+      title: '状态',
+      key: 'status',
+      width: 100,
+      render: (row) => h(NTag, { type: row.status === 1 ? 'success' : 'default', size: 'small' }, { default: () => row.status === 1 ? '启用' : '禁用' })
+    })
+  }
+  baseCols.push({
     title: '操作',
     key: 'actions',
     width: 180,
@@ -187,8 +228,9 @@ const columns = [
         default: () => '删除'
       })
     ])
-  }
-]
+  })
+  return baseCols
+})
 
 function flattenCategories(list, result = []) {
   list.forEach(item => {
@@ -209,15 +251,19 @@ function buildCategoryTree(list) {
 async function fetchData() {
   loading.value = true
   try {
-    const [ingRes, catRes] = await Promise.all([
-      getIngredientList({ ...filters, page: pagination.page, pageSize: pagination.pageSize }),
-      getCategoryTree()
-    ])
-    dataList.value = ingRes.data?.list || ingRes.data || []
-    pagination.itemCount = ingRes.data?.total || ingRes.data?.length || 0
+    const catRes = await getCategoryTree()
     const catData = catRes.data || catRes || []
     categoryOptions.value = flattenCategories(catData)
     categoryTreeOptions.value = buildCategoryTree(catData)
+
+    let ingRes
+    if (filters.lowStock) {
+      ingRes = await getLowStockList({ ...filters, page: pagination.page, pageSize: pagination.pageSize })
+    } else {
+      ingRes = await getIngredientList({ ...filters, page: pagination.page, pageSize: pagination.pageSize })
+    }
+    dataList.value = ingRes.data?.list || ingRes.data || []
+    pagination.itemCount = ingRes.data?.total || ingRes.data?.length || 0
   } catch (e) {
     dataList.value = []
     pagination.itemCount = 0
@@ -232,6 +278,20 @@ async function fetchData() {
 function resetFilters() {
   filters.keyword = ''
   filters.categoryId = null
+  filters.lowStock = false
+  router.replace({ name: 'Ingredient', query: {} })
+  pagination.page = 1
+  fetchData()
+}
+
+function toggleLowStockFilter() {
+  filters.lowStock = !filters.lowStock
+  pagination.page = 1
+  if (filters.lowStock) {
+    router.replace({ name: 'Ingredient', query: { lowStock: '1' } })
+  } else {
+    router.replace({ name: 'Ingredient', query: {} })
+  }
   fetchData()
 }
 
@@ -326,7 +386,12 @@ function handleDelete(row) {
   })
 }
 
-onMounted(fetchData)
+onMounted(() => {
+  if (route.query.lowStock === '1' || route.query.lowStock === 'true') {
+    filters.lowStock = true
+  }
+  fetchData()
+})
 </script>
 
 <style scoped>

@@ -53,3 +53,26 @@ export function getWarningList(params) {
     params
   })
 }
+
+export function getPendingStockWarnings() {
+  return request({
+    url: '/warnings/pending-stock',
+    method: 'get'
+  })
+}
+
+export function handleWarningLog(id, data) {
+  return request({
+    url: `/warnings/logs/${id}`,
+    method: 'put',
+    data
+  })
+}
+
+export function batchHandleWarningLogs(data) {
+  return request({
+    url: '/warnings/logs/batch/handle',
+    method: 'put',
+    data
+  })
+}

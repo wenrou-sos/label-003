@@ -1,5 +1,18 @@
 <template>
   <div class="dashboard">
+    <div v-if="pendingWarningCount > 0" class="warning-banner" @click="goToLowStockIngredients">
+      <div class="warning-banner-left">
+        <n-icon size="20"><AlertCircleOutline /></n-icon>
+        <span class="warning-banner-text">
+          当前有 <strong>{{ pendingWarningCount }}</strong> 种食材库存偏低，建议及时补货
+        </span>
+      </div>
+      <div class="warning-banner-right">
+        <span>去看看</span>
+        <n-icon size="16"><ChevronForwardOutline /></n-icon>
+      </div>
+    </div>
+
     <n-card style="margin-bottom: 20px;">
       <template #header>
         <div style="display: flex; align-items: center; gap: 8px;">
@@ -42,11 +55,13 @@
           </n-card>
         </n-gi>
         <n-gi>
-          <n-card embedded>
-            <div style="display: flex; justify-content: space-between; align-items: center;">
+          <n-card embedded class="low-stock-card" @click="goToLowStockIngredients">
+            <div style="display: flex; justify-content: space-between; align-items: center; cursor: pointer;">
               <div>
                 <n-text depth="3" style="font-size: 13px;">低库存预警</n-text>
-                <div style="font-size: 28px; font-weight: 600; margin-top: 4px; color: #d03050;">{{ summary.lowStock || 0 }}</div>
+                <div style="font-size: 28px; font-weight: 600; margin-top: 4px; color: #d03050;">
+                  {{ pendingWarningCount || summary.lowStock || 0 }}
+                </div>
               </div>
               <n-icon size="32" color="#d03050"><AlertCircleOutline /></n-icon>
             </div>
@@ -105,7 +120,8 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, h } from 'vue'
+import { ref, reactive, computed, onMounted, h, inject } from 'vue'
+import { useRouter } from 'vue-router'
 import { useMessage, NTag, NButton, NIcon } from 'naive-ui'
 import {
   BarChartOutline,
@@ -116,13 +132,17 @@ import {
   FolderOutline,
   SearchOutline,
   RefreshOutline,
-  EyeOutline
+  EyeOutline,
+  ChevronForwardOutline
 } from '@vicons/ionicons5'
 import { getInventoryList, getInventorySummary, getLowStockList } from '@/api/inventory'
 import { getCategoryTree } from '@/api/category'
 import { formatDate, formatNumber } from '@/utils'
 
 const message = useMessage()
+const router = useRouter()
+
+const pendingWarningCount = inject('pendingWarningCount', ref(0))
 
 const loading = ref(false)
 const dataList = ref([])
@@ -139,6 +159,10 @@ const pagination = reactive({
   pageSize: 10,
   itemCount: 0
 })
+
+function goToLowStockIngredients() {
+  router.push({ name: 'Ingredient', query: { lowStock: '1' } })
+}
 
 const displayData = computed(() => {
   let list = [...dataList.value]
@@ -282,5 +306,59 @@ onMounted(fetchData)
 <style scoped>
 .dashboard {
   padding: 0;
+}
+
+.warning-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  background: linear-gradient(90deg, #fff1f0 0%, #ffeceb 100%);
+  border: 1px solid #ffa39e;
+  border-radius: 6px;
+  margin-bottom: 20px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.warning-banner:hover {
+  background: linear-gradient(90deg, #ffeceb 0%, #ffd9d6 100%);
+  border-color: #ff7875;
+}
+
+.warning-banner-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #cf1322;
+}
+
+.warning-banner-text {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.warning-banner-text strong {
+  font-size: 18px;
+  color: #d03050;
+  margin: 0 4px;
+}
+
+.warning-banner-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #cf1322;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.low-stock-card {
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.low-stock-card:hover {
+  box-shadow: 0 2px 8px rgba(208, 48, 80, 0.15);
 }
 </style>

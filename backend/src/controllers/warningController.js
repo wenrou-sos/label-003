@@ -335,6 +335,45 @@ const batchUpdateWarningConfigs = async (req, res, next) => {
   }
 };
 
+const getPendingStockWarnings = async (req, res, next) => {
+  try {
+    const logs = await WarningLog.findAll({
+      where: {
+        warningType: 'stock',
+        status: 'pending'
+      },
+      include: [{
+        model: Ingredient,
+        as: 'ingredient',
+        attributes: ['id', 'name', 'spec', 'unit', 'warningStock', 'categoryId'],
+        include: [{ model: Category, as: 'category', attributes: ['id', 'name'] }]
+      }],
+      order: [['createdAt', 'DESC'], ['id', 'DESC']]
+    });
+
+    const list = logs.map(log => ({
+      id: log.id,
+      warningType: log.warningType,
+      ingredientId: log.ingredientId,
+      ingredientName: log.ingredient?.name || '',
+      ingredientCode: '',
+      categoryId: log.ingredient?.categoryId,
+      categoryName: log.ingredient?.category?.name || '',
+      spec: log.ingredient?.spec || '',
+      unit: log.ingredient?.unit || '',
+      currentValue: parseFloat(log.currentValue) || 0,
+      thresholdValue: parseFloat(log.thresholdValue) || 0,
+      message: log.message,
+      status: log.status,
+      createdAt: log.createdAt
+    }));
+
+    res.json(response.success({ list, count: list.length }));
+  } catch (err) {
+    next(err);
+  }
+};
+
 module.exports = {
   getWarningConfigs,
   createWarningConfig,
@@ -344,5 +383,6 @@ module.exports = {
   handleWarningLog,
   batchHandleWarningLogs,
   checkExpireWarnings,
-  batchUpdateWarningConfigs
+  batchUpdateWarningConfigs,
+  getPendingStockWarnings
 };

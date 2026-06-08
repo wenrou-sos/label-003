@@ -244,9 +244,110 @@ const getIngredientInventory = async (req, res, next) => {
   }
 };
 
+const getLowStockList = async (req, res, next) => {
+  try {
+    const { page = 1, pageSize = 100, keyword, categoryId } = req.query;
+    const offset = (page - 1) * pageSize;
+
+    const ingredientWhere = {};
+    if (keyword) {
+      ingredientWhere.name = { [Op.like]: `%${keyword}%` };
+    }
+    if (categoryId) {
+      ingredientWhere.categoryId = categoryId;
+    }
+
+    const batches = await InventoryBatch.findAll({
+      where: {
+        quantity: { [Op.gt]: 0 },
+        status: 1
+      },
+      include: [
+        {
+          model: Ingredient,
+          as: 'ingredient',
+          where: ingredientWhere,
+          include: [{ model: Category, as: 'category', attributes: ['id', 'name'] }]
+        },
+        { model: Supplier, as: 'supplier', attributes: ['id', 'name'] }
+      ],
+      order: [
+        [{ model: Ingredient, as: 'ingredient' }, 'id', 'DESC'],
+        ['inboundDate', 'ASC']
+      ]
+    });
+
+    const inventoryMap = new Map();
+    batches.forEach(batch => {
+      const ingredientId = batch.ingredientId;
+      if (!inventoryMap.has(ingredientId)) {
+        inventoryMap.set(ingredientId, {
+          ingredient: batch.ingredient,
+          totalQuantity: 0,
+          totalAmount: 0,
+          batches: []
+        });
+      }
+      const item = inventoryMap.get(ingredientId);
+      const qty = parseFloat(batch.quantity);
+      const price = parseFloat(batch.unitPrice);
+      item.totalQuantity += qty;
+      item.totalAmount += qty * price;
+      item.batches.push(batch);
+    });
+
+    const lowStockItems = [];
+    for (const item of inventoryMap.values()) {
+      const ingredient = item.ingredient;
+      if (!ingredient) continue;
+      const warningThreshold = parseFloat(ingredient.warningStock) || 0;
+      if (warningThreshold > 0 && item.totalQuantity <= warningThreshold) {
+        let latestUpdate = ingredient.updatedAt;
+        for (const b of item.batches) {
+          if (b.updatedAt && new Date(b.updatedAt) > new Date(latestUpdate)) {
+            latestUpdate = b.updatedAt;
+          }
+        }
+        const avgPrice = item.batches.length > 0
+          ? item.totalAmount / item.totalQuantity
+          : 0;
+        lowStockItems.push({
+          id: ingredient.id,
+          name: ingredient.name,
+          code: '',
+          categoryId: ingredient.categoryId,
+          categoryName: ingredient.category?.name || '',
+          spec: ingredient.spec || '',
+          unit: ingredient.unit,
+          quantity: parseFloat(item.totalQuantity.toFixed(2)),
+          price: parseFloat(avgPrice.toFixed(2)),
+          totalValue: parseFloat(item.totalAmount.toFixed(2)),
+          warningThreshold,
+          isLowStock: true,
+          isExpireWarning: false,
+          batchCount: item.batches.length,
+          status: ingredient.status,
+          updatedAt: latestUpdate
+        });
+      }
+    }
+
+    lowStockItems.sort((a, b) => a.quantity - b.quantity);
+
+    const start = offset;
+    const end = offset + parseInt(pageSize);
+    const pagedList = lowStockItems.slice(start, end);
+
+    res.json(response.page(pagedList, lowStockItems.length, page, pageSize));
+  } catch (err) {
+    next(err);
+  }
+};
+
 module.exports = {
   getInventoryList,
   getInventoryBatches,
   getInventorySummary,
-  getIngredientInventory
+  getIngredientInventory,
+  getLowStockList
 };

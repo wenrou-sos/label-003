@@ -56,11 +56,69 @@
         </router-view>
       </n-layout-content>
     </n-layout>
+
+    <n-modal
+      v-model:show="warningModalVisible"
+      preset="card"
+      title="库存预警提醒"
+      :mask-closable="false"
+      style="width: 640px; max-height: 80vh;"
+    >
+      <div class="stock-warning-modal">
+        <n-alert type="warning" :show-icon="true" style="margin-bottom: 16px;">
+          当前有 <strong style="color: #d03050;">{{ warningList.length }}</strong> 种食材库存低于预警阈值，建议及时补货
+        </n-alert>
+        <div v-if="warningList.length > 0" class="warning-list">
+          <div v-for="item in warningList" :key="item.id" class="warning-item">
+            <div class="warning-item-info">
+              <div class="warning-item-name">
+                <n-tag type="warning" size="small" round>低库存</n-tag>
+                <span class="name">{{ item.ingredientName }}</span>
+              </div>
+              <div class="warning-item-detail">
+                <span>分类：{{ item.categoryName || '-' }}</span>
+                <span>规格：{{ item.spec || '-' }}</span>
+              </div>
+              <div class="warning-item-stock">
+                <span class="label">当前库存：</span>
+                <span class="value danger">{{ item.currentValue }} {{ item.unit }}</span>
+                <span class="label" style="margin-left: 16px;">预警阈值：</span>
+                <span class="value">{{ item.thresholdValue }} {{ item.unit }}</span>
+              </div>
+            </div>
+            <div class="warning-item-action">
+              <n-button size="small" type="success" @click="handleMarkHandled(item)">
+                已处理
+              </n-button>
+            </div>
+          </div>
+        </div>
+        <div v-else class="empty-tip">
+          暂无预警
+        </div>
+      </div>
+      <template #footer>
+        <n-space justify="space-between">
+          <n-button quaternary size="small" @click="goToIngredientPage">
+            <template #icon><CubeOutline /></template>
+            查看所有食材
+          </n-button>
+          <n-space>
+            <n-button size="small" type="primary" ghost @click="handleBatchMarkHandled" v-if="warningList.length > 0">
+              全部标记已处理
+            </n-button>
+            <n-button size="small" @click="warningModalVisible = false">
+              关闭
+            </n-button>
+          </n-space>
+        </n-space>
+      </template>
+    </n-modal>
   </n-layout>
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, provide } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useMessage, useDialog, NIcon } from 'naive-ui'
 import {
@@ -78,6 +136,11 @@ import {
   ChevronDownOutline
 } from '@vicons/ionicons5'
 import { useUserStore } from '@/stores/user'
+import {
+  getPendingStockWarnings,
+  handleWarningLog,
+  batchHandleWarningLogs
+} from '@/api/warning'
 
 const router = useRouter()
 const route = useRoute()
@@ -86,6 +149,59 @@ const dialog = useDialog()
 const userStore = useUserStore()
 
 const collapsed = ref(false)
+const warningModalVisible = ref(false)
+const warningList = ref([])
+const pendingWarningCount = ref(0)
+
+provide('pendingWarningCount', pendingWarningCount)
+provide('refreshWarnings', fetchWarnings)
+
+async function fetchWarnings() {
+  try {
+    const res = await getPendingStockWarnings()
+    warningList.value = res.data?.list || []
+    pendingWarningCount.value = res.data?.count || warningList.value.length
+    if (warningList.value.length > 0 && !warningModalVisible.value) {
+      const hasShown = sessionStorage.getItem('warning_shown')
+      if (!hasShown) {
+        warningModalVisible.value = true
+        sessionStorage.setItem('warning_shown', '1')
+      }
+    }
+  } catch (e) {
+    console.error('获取预警列表失败', e)
+  }
+}
+
+async function handleMarkHandled(item) {
+  try {
+    await handleWarningLog(item.id, { status: 'handled' })
+    message.success('已标记为处理')
+    warningList.value = warningList.value.filter(w => w.id !== item.id)
+    pendingWarningCount.value = warningList.value.length
+  } catch (e) {
+    message.error('操作失败')
+  }
+}
+
+async function handleBatchMarkHandled() {
+  if (warningList.value.length === 0) return
+  try {
+    const ids = warningList.value.map(w => w.id)
+    await batchHandleWarningLogs({ ids, status: 'handled' })
+    message.success('已全部标记为处理')
+    warningList.value = []
+    pendingWarningCount.value = 0
+    warningModalVisible.value = false
+  } catch (e) {
+    message.error('操作失败')
+  }
+}
+
+function goToIngredientPage() {
+  warningModalVisible.value = false
+  router.push({ name: 'Ingredient', query: { lowStock: '1' } })
+}
 
 const iconMap = {
   BarChartOutline,
@@ -138,11 +254,18 @@ function handleUserSelect(key) {
       onPositiveClick: () => {
         userStore.logout()
         message.success('已退出登录')
+        sessionStorage.removeItem('warning_shown')
         router.push({ name: 'Login' })
       }
     })
   }
 }
+
+onMounted(() => {
+  if (userStore.token) {
+    fetchWarnings()
+  }
+})
 </script>
 
 <style scoped>
@@ -196,5 +319,87 @@ function handleUserSelect(key) {
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
+}
+
+.stock-warning-modal {
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.warning-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.warning-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: #fff7e6;
+  border: 1px solid #ffe58f;
+  border-radius: 6px;
+  gap: 12px;
+}
+
+.warning-item-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.warning-item-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.warning-item-name .name {
+  font-size: 15px;
+  font-weight: 600;
+  color: #262626;
+}
+
+.warning-item-name .code {
+  font-size: 12px;
+  color: #8c8c8c;
+}
+
+.warning-item-detail {
+  display: flex;
+  gap: 16px;
+  font-size: 13px;
+  color: #595959;
+  margin-bottom: 6px;
+}
+
+.warning-item-stock {
+  font-size: 13px;
+}
+
+.warning-item-stock .label {
+  color: #8c8c8c;
+}
+
+.warning-item-stock .value {
+  color: #262626;
+  font-weight: 500;
+}
+
+.warning-item-stock .value.danger {
+  color: #d03050;
+  font-weight: 600;
+}
+
+.warning-item-action {
+  flex-shrink: 0;
+}
+
+.empty-tip {
+  text-align: center;
+  padding: 40px 0;
+  color: #bfbfbf;
+  font-size: 14px;
 }
 </style>

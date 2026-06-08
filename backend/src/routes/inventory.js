@@ -4,11 +4,13 @@ const {
   getInventoryList,
   getInventoryBatches,
   getInventorySummary,
-  getIngredientInventory
+  getIngredientInventory,
+  getLowStockList
 } = require('../controllers/inventoryController');
 const auth = require('../middleware/auth');
 
 router.get('/', auth, getInventoryList);
+router.get('/low-stock', auth, getLowStockList);
 router.get('/batches', auth, getInventoryBatches);
 router.get('/summary', auth, getInventorySummary);
 router.get('/ingredient/:id', auth, getIngredientInventory);
